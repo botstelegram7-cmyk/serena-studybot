@@ -139,11 +139,8 @@ async def get_db_stats() -> dict:
 
 # ══════════════════════════════ TEST SESSIONS ════════════════
 async def create_test_session(uid: int, data: dict):
-    await sessions_col.update_one(
-        {"uid": uid},
-        {"$set": {**data, "uid": uid, "created_at": datetime.utcnow()}},
-        upsert=True
-    )
+    await sessions_col.delete_many({"uid": uid})  # Always fresh start
+    await sessions_col.insert_one({**data, "uid": uid, "created_at": datetime.utcnow()})
 
 async def get_test_session(uid: int):
     return await sessions_col.find_one({"uid": uid})
