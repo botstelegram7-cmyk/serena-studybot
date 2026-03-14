@@ -124,12 +124,23 @@ async def start_mock_test(client: Client, message: Message,
     uid  = message.from_user.id
     name = message.from_user.first_name
 
-    if await get_test_session(uid):
-        await message.reply(
-            "⚠️ **Test already running!**\n"
-            "Use /stoptest to end it first."
-        )
-        return
+    # Auto-clear any stale session instead of blocking user
+    existing = await get_test_session(uid)
+    if existing:
+        created_at = existing.get("created_at")
+        # If session older than 2 hours — auto clear (stale)
+        if created_at:
+            age_hours = (time.time() - existing.get("start_time", 0)) / 3600
+            if age_hours > 2:
+                await clear_test_session(uid)
+            else:
+                await message.reply(
+                    f"⚠️ **{name}, a test is running!**\n\n"
+                    "Use /stoptest to end it, then start new one."
+                )
+                return
+        else:
+            await clear_test_session(uid)  # No timestamp = corrupted, clear it
 
     # ── Animated Loading ──────────────────────────────────────
     msg = await message.reply(
