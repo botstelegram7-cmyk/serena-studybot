@@ -1,8 +1,25 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, date
+from urllib.parse import quote_plus
 from config import MONGO_URI, DB_NAME, DEFAULT_LANG
 
-client = AsyncIOMotorClient(MONGO_URI)
+
+def _safe_mongo_uri(uri: str) -> str:
+    """Auto-encode special chars in MongoDB URI password"""
+    try:
+        if "://" not in uri or "@" not in uri:
+            return uri
+        scheme, rest = uri.split("://", 1)
+        credentials, host_part = rest.rsplit("@", 1)
+        if ":" in credentials:
+            user, password = credentials.split(":", 1)
+            return f"{scheme}://{quote_plus(user)}:{quote_plus(password)}@{host_part}"
+        return uri
+    except Exception:
+        return uri
+
+
+client = AsyncIOMotorClient(_safe_mongo_uri(MONGO_URI))
 db     = client[DB_NAME]
 
 users_col     = db["users"]
