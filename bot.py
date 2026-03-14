@@ -15,7 +15,14 @@ from modules.doubt_solver import solve_doubt
 from modules.tracker      import get_progress_report, get_leaderboard_text
 from modules.parser       import process_owner_upload
 
-app = Client("serena_studybot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# in_memory=True — No session file needed, works perfectly on Render!
+app = Client(
+    name      = "serena_studybot",
+    api_id    = API_ID,
+    api_hash  = API_HASH,
+    bot_token = BOT_TOKEN,
+    in_memory = True,
+)
 
 # Owner upload context: {uid: {exam, subject, source, exam_year, lang}}
 _upload_ctx: dict = {}
