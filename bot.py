@@ -280,10 +280,12 @@ async def cmd_practice(_, msg: Message):
 async def cmd_stoptest(_, msg: Message):
     uid  = msg.from_user.id
     name = msg.from_user.first_name
-    await clear_test_session(uid)  # Force clear — no check needed
+    # Nuke ALL sessions for this user — guaranteed clean
+    from database import sessions_col
+    await sessions_col.delete_many({"uid": uid})
     await msg.reply(
-        f"🛑 **{name}, test cleared!**\n\n"
-        "Start fresh: /test SSC"
+        f"🛑 **{name}, all sessions cleared!**\n\n"
+        f"✅ Start fresh: /test SSC"
     )
 
 @app.on_message(filters.command("cleartest") & owner_filter)
@@ -301,16 +303,21 @@ async def cmd_cleartest(_, msg: Message):
 
 
 # ═══════════════════ BUTTON ANSWERS ═══════════════════════════
-@app.on_callback_query(filters.regex(r"^ans_(\d+)_(\d+)_([ABCDE]|SKIP)$"))
+@app.on_callback_query(filters.regex(r"^ans_(\d+)_(\d+)_([ABCD]|SKIP)$"))
 async def cb_answer(_, cq: CallbackQuery):
-    uid   = int(cq.matches[0].group(1))
+    uid   = cq.from_user.id   # Always use actual user — no mismatch possible
     q_idx = int(cq.matches[0].group(2))
-    ans   = cq.matches[0].group(3)  # A/B/C/D or SKIP
-    if uid != cq.from_user.id:
-        await cq.answer("Not your question!", show_alert=True)
+    ans   = cq.matches[0].group(3)
+    # Verify session belongs to this user
+    sess  = await get_test_session(uid)
+    if not sess:
+        await cq.answer("No active test! Start with /test SSC", show_alert=True)
         return
     await cq.answer()
-    await cq.message.delete()
+    try:
+        await cq.message.delete()
+    except Exception:
+        pass
     await process_button_answer(app, uid, cq.message.chat.id, q_idx, ans)
 
 
