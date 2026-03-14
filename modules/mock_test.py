@@ -223,15 +223,15 @@ async def start_mock_test(client: Client, message: Message,
         f"📊 Difficulty: **{difficulty}**\n"
         f"{pyq_info}"
         f"✅ +{marks['correct']} Correct  |  ❌ {marks['wrong']} Wrong\n\n"
-        f"📌 Har question poll mein aayega!\n\n"
+        f"📌 Har question inline buttons mein aayega!\n\n"
         f"{t(lang, 'starting')}"
     )
     await asyncio.sleep(3)
-    await send_next_poll(client, message.chat.id, uid)
+    await send_next_question(client, message.chat.id, uid)
 
 
 # ── SEND POLL ─────────────────────────────────────────────────
-async def send_next_poll(client: Client, chat_id: int, uid: int):
+async def send_next_question(client: Client, chat_id: int, uid: int):
     session = await get_test_session(uid)
     if not session or session["status"] != "running":
         return
@@ -271,31 +271,12 @@ async def send_next_poll(client: Client, chat_id: int, uid: int):
 
     options = [str(opt)[:100] for opt in q.get("options", ["A","B","C","D"])]
 
-    try:
-        poll_msg = await client.send_poll(
-            chat_id    = chat_id,
-            question   = question_text[:255],
-            options    = options,
-            is_anonymous = False,
-            open_period  = POLL_TIMER,
-            explanation  = (
-                f"✅ Answer: {q.get('answer','?')} | "
-                f"{q.get('explanation','')}"
-            )[:200],
-        )
-        poll_ids = session.get("poll_msg_ids", {})
-        poll_ids[str(idx)] = poll_msg.id
-        await update_test_session(uid, {
-            "current_poll_id": poll_msg.id,
-            "poll_msg_ids":    poll_ids,
-        })
-    except Exception as e:
-        print(f"[Poll] Error: {e}")
-        await _send_button_question(client, chat_id, uid, q, idx, total, lang)
+    # Use inline buttons (compatible with all Pyrogram versions)
+    await _send_button_question(client, chat_id, uid, q, idx, total, lang)
 
 
 async def _send_button_question(client, chat_id, uid, q, idx, total, lang):
-    """Fallback: inline buttons if poll fails"""
+    """Send question as inline buttons"""
     opts    = q.get("options", [])
     buttons = []
     for i, opt in enumerate(opts):
@@ -322,35 +303,6 @@ async def _send_button_question(client, chat_id, uid, q, idx, total, lang):
 
 
 # ── PROCESS ANSWERS ───────────────────────────────────────────
-async def process_poll_answer(client, uid: int, poll_id: int, chosen_ids: list):
-    session = await get_test_session(uid)
-    if not session or session["status"] != "running":
-        return
-
-    idx       = session["current_idx"]
-    questions = session["questions"]
-    q         = questions[idx]
-    lang      = session.get("lang","en")
-
-    letter_map = {0:"A",1:"B",2:"C",3:"D"}
-    user_ans   = letter_map.get(chosen_ids[0],"A") if chosen_ids else "SKIPPED"
-
-    answers       = session.get("answers", {})
-    answers[str(idx)] = user_ans
-    next_idx      = idx + 1
-
-    correct_ans   = str(q.get("answer","")).strip().upper()[:1]
-    is_correct    = user_ans == correct_ans
-    await update_subject_stat(uid, q.get("subject","General"), is_correct)
-    await update_test_session(uid, {"answers": answers, "current_idx": next_idx})
-
-    if next_idx >= session["total"]:
-        await finish_test(client, uid, uid)
-    else:
-        await asyncio.sleep(1)
-        await send_next_poll(client, uid, uid)
-
-
 async def process_button_answer(client, uid: int, chat_id: int,
                                  q_idx: int, user_ans: str):
     session = await get_test_session(uid)
@@ -382,7 +334,7 @@ async def process_button_answer(client, uid: int, chat_id: int,
         await finish_test(client, chat_id, uid)
     else:
         await asyncio.sleep(1)
-        await send_next_poll(client, chat_id, uid)
+        await send_next_question(client, chat_id, uid)
 
 
 # ── FINISH + ANALYSIS ─────────────────────────────────────────
