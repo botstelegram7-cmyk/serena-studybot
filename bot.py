@@ -1,9 +1,13 @@
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import (
-    Message, CallbackQuery, PollAnswer,
+    Message, CallbackQuery,
     InlineKeyboardMarkup, InlineKeyboardButton
 )
+try:
+    from pyrogram.types import PollAnswer
+except ImportError:
+    PollAnswer = None  # Older pyrogram — handler still works
 from config import API_ID, API_HASH, BOT_TOKEN, OWNER_IDS, EXAMS, MAX_DAILY_DOUBTS, LANGUAGES
 from database import (
     get_or_create_user, get_test_session, clear_test_session,
@@ -303,7 +307,7 @@ async def cmd_stoptest(_, msg: Message):
 
 # ═══════════════════ POLL + BUTTON ANSWERS ════════════════════
 @app.on_poll_answer()
-async def on_poll_answer(_, pa: PollAnswer):
+async def on_poll_answer(_, pa):
     await process_poll_answer(app, pa.user.id, pa.poll_id, pa.option_ids)
 
 
