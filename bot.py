@@ -289,11 +289,11 @@ async def cmd_stoptest(_, msg: Message):
 
 
 # ═══════════════════ BUTTON ANSWERS ═══════════════════════════
-@app.on_callback_query(filters.regex(r"^ans_(\d+)_(\d+)_([ABCD])$"))
+@app.on_callback_query(filters.regex(r"^ans_(\d+)_(\d+)_([ABCDE]|SKIP)$"))
 async def cb_answer(_, cq: CallbackQuery):
     uid   = int(cq.matches[0].group(1))
     q_idx = int(cq.matches[0].group(2))
-    ans   = cq.matches[0].group(3)
+    ans   = cq.matches[0].group(3)  # A/B/C/D or SKIP
     if uid != cq.from_user.id:
         await cq.answer("Not your question!", show_alert=True)
         return
