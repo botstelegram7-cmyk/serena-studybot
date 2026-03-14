@@ -4,17 +4,13 @@ from pyrogram.types import (
     Message, CallbackQuery,
     InlineKeyboardMarkup, InlineKeyboardButton
 )
-try:
-    from pyrogram.types import PollAnswer
-except ImportError:
-    PollAnswer = None  # Older pyrogram — handler still works
 from config import API_ID, API_HASH, BOT_TOKEN, OWNER_IDS, EXAMS, MAX_DAILY_DOUBTS, LANGUAGES
 from database import (
     get_or_create_user, get_test_session, clear_test_session,
     add_questions_bulk, count_questions, update_user, get_user,
     get_user_lang, get_db_stats, check_doubt_limit, get_all_users
 )
-from modules.mock_test    import start_mock_test, process_poll_answer, process_button_answer, TEST_PRESETS
+from modules.mock_test    import start_mock_test, process_button_answer, TEST_PRESETS
 from modules.doubt_solver import solve_doubt
 from modules.tracker      import get_progress_report, get_leaderboard_text
 from modules.parser       import process_owner_upload
@@ -305,12 +301,7 @@ async def cmd_stoptest(_, msg: Message):
     await msg.reply(labels.get(lang, labels["en"]))
 
 
-# ═══════════════════ POLL + BUTTON ANSWERS ════════════════════
-@app.on_poll_answer()
-async def on_poll_answer(_, pa):
-    await process_poll_answer(app, pa.user.id, pa.poll_id, pa.option_ids)
-
-
+# ═══════════════════ BUTTON ANSWERS ════════════════════
 @app.on_callback_query(filters.regex(r"^ans_(\d+)_(\d+)_([ABCD])$"))
 async def cb_answer(_, cq: CallbackQuery):
     uid   = int(cq.matches[0].group(1))
