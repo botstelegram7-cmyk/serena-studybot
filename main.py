@@ -14,11 +14,12 @@ START = datetime.utcnow()
 
 @web.get("/")
 async def root():
-    return JSONResponse({"status":"running","bot":"SerenaStudyBot",
-                         "uptime":int((datetime.utcnow()-START).total_seconds())})
+    return JSONResponse({"status": "running", "bot": "SerenaStudyBot",
+                         "uptime": int((datetime.utcnow()-START).total_seconds())})
+
 @web.get("/health")
 async def health():
-    return JSONResponse({"status":"ok","time":datetime.utcnow().isoformat()})
+    return JSONResponse({"status": "ok", "time": datetime.utcnow().isoformat()})
 
 
 def run_web():
