@@ -280,12 +280,24 @@ async def cmd_practice(_, msg: Message):
 async def cmd_stoptest(_, msg: Message):
     uid  = msg.from_user.id
     name = msg.from_user.first_name
-    sess = await get_test_session(uid)
-    if not sess:
-        await msg.reply(f"❌ {name}, no active test.")
-        return
-    await clear_test_session(uid)
-    await msg.reply(f"🛑 **{name}, test stopped.**\nNew test: /test SSC")
+    await clear_test_session(uid)  # Force clear — no check needed
+    await msg.reply(
+        f"🛑 **{name}, test cleared!**\n\n"
+        "Start fresh: /test SSC"
+    )
+
+@app.on_message(filters.command("cleartest") & owner_filter)
+async def cmd_cleartest(_, msg: Message):
+    """Owner can clear ANY user's session"""
+    args = msg.command[1:]
+    if args and args[0].isdigit():
+        target_uid = int(args[0])
+        await clear_test_session(target_uid)
+        await msg.reply(f"✅ Cleared session for user `{target_uid}`")
+    else:
+        # Clear own session
+        await clear_test_session(msg.from_user.id)
+        await msg.reply("✅ Your session cleared!")
 
 
 # ═══════════════════ BUTTON ANSWERS ═══════════════════════════
