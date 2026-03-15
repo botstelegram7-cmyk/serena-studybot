@@ -139,8 +139,11 @@ async def get_db_stats() -> dict:
 
 # ══════════════════════════════ TEST SESSIONS ════════════════
 async def create_test_session(uid: int, data: dict):
-    await sessions_col.delete_many({"uid": uid})  # Always fresh start
-    await sessions_col.insert_one({**data, "uid": uid, "created_at": datetime.utcnow()})
+    await sessions_col.delete_many({"uid": uid})  # Nuke ALL old sessions
+    doc = {**data, "uid": uid, "created_at": datetime.utcnow()}
+    # Remove non-serializable keys
+    doc.pop("_id", None)
+    await sessions_col.insert_one(doc)
 
 async def get_test_session(uid: int):
     return await sessions_col.find_one({"uid": uid})
@@ -149,7 +152,7 @@ async def update_test_session(uid: int, data: dict):
     await sessions_col.update_one({"uid": uid}, {"$set": data})
 
 async def clear_test_session(uid: int):
-    await sessions_col.delete_one({"uid": uid})
+    await sessions_col.delete_many({"uid": uid})  # delete_many — no stale docs
 
 
 # ══════════════════════════════ COMPLETED TESTS ══════════════

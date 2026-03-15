@@ -303,16 +303,11 @@ async def cmd_cleartest(_, msg: Message):
 
 
 # ═══════════════════ BUTTON ANSWERS ═══════════════════════════
-@app.on_callback_query(filters.regex(r"^ans_(\d+)_(\d+)_([ABCD]|SKIP)$"))
+@app.on_callback_query(filters.regex(r"^tans_(\d+)_(\d+)_([ABCD]|SKIP)$"))
 async def cb_answer(_, cq: CallbackQuery):
-    uid   = cq.from_user.id   # Always use actual user — no mismatch possible
+    uid   = cq.from_user.id   # Always actual user id
     q_idx = int(cq.matches[0].group(2))
     ans   = cq.matches[0].group(3)
-    # Verify session belongs to this user
-    sess  = await get_test_session(uid)
-    if not sess:
-        await cq.answer("No active test! Start with /test SSC", show_alert=True)
-        return
     await cq.answer()
     try:
         await cq.message.delete()
