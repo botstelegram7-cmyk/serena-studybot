@@ -2,68 +2,113 @@ from modules.ai_helper import ask_ai
 import re
 
 EXAM_CTX = {
-    "SSC":"SSC CGL/CHSL 2025-26","UPSC":"UPSC CSE 2025-26",
-    "JEE":"JEE Mains/Advanced 2025-26","RAILWAY":"RRB NTPC/GD 2025-26",
+    "SSC":     "SSC CGL/CHSL 2025-26",
+    "UPSC":    "UPSC CSE 2025-26",
+    "JEE":     "JEE Mains/Advanced 2025-26",
+    "RAILWAY": "RRB NTPC/Group D 2025-26",
 }
 
-MATH_KW = [
-    "%","profit","loss","si","ci","speed","distance","time","ratio","average",
-    "mixture","lcm","hcf","train","work","pipe","age","area","volume",
-    "discount","cost","price","प्रतिशत","लाभ","=","×","÷","√","²","x","y",
-    "find","calculate","solve","value","percent","number","algebra"
+# Only actual maths/quant patterns — NOT general questions
+MATH_PATTERNS = [
+    r'\d+\s*[%×÷\+\-\*\/]\s*\d+',   # number operator number
+    r'\d+\s*(percent|%)',             # percentage
+    r'(profit|loss|discount|sp|cp|mp)\s*(of|is|=|:)',  # commerce
+    r'(speed|distance|time)\s*(of|is|=|:|\d)',         # SDT
+    r'(find|calculate|evaluate|solve|what is the value)',  # solve commands
+    r'(lcm|hcf|gcd)\s*of',
+    r'(average|mean)\s*of',
+    r'(area|volume|perimeter)\s*of',
+    r'(\d+x|\dx)\s*[\+\-\=]',        # algebra like 2x + 5
+    r'(si|ci|interest)\s*(=|is|on)',  # SI/CI
+    r'train.*speed|speed.*train',
+    r'pipe.*tank|tank.*pipe',
+    r'work.*days|days.*work',
+    r'ratio\s*\d+\s*:\s*\d+',
+    r'\d+\s*(km|kg|liter|litre|rs|₹|meter|hour|min)',
 ]
 
-def _is_math(t): 
-    tl = t.lower()
-    return any(k in tl for k in MATH_KW) or bool(re.search(r'\d',t))
+GENERAL_PATTERNS = [
+    r'how can i', r'how do i', r'what is', r'who is', r'why is',
+    r'explain', r'tell me', r'kya hai', r'kaise', r'kyun',
+    r'difference between', r'define', r'meaning of',
+    r'crack ssc', r'crack upsc', r'crack jee', r'prepare',
+    r'smart', r'topper', r'strategy', r'tips', r'trick',
+    r'history of', r'article \d+', r'constitution',
+    r'capital of', r'president', r'minister', r'scheme',
+]
 
-ROUGH_SYS = """Solve like a TOPPER writing on rough paper during SSC/JEE exam.
 
-RULES (STRICT):
-- Max 8-10 lines ONLY — short and direct
-- ONLY numbers and symbols — zero explanation words
-- NO LaTeX, NO $$, NO \\frac, NO "Let", NO "Therefore"
-- Each step = new line
-- Start: one 2-word heading
-- End: — Technical Serena
+def _is_math(text: str) -> bool:
+    tl = text.lower().strip()
 
-EXAMPLE (copy this style):
+    # If matches general pattern → definitely NOT math
+    for pat in GENERAL_PATTERNS:
+        if re.search(pat, tl):
+            return False
+
+    # Check math patterns
+    for pat in MATH_PATTERNS:
+        if re.search(pat, tl, re.IGNORECASE):
+            return True
+
+    # Has options like 1. 2. 3. 4. → likely a MCQ math question
+    if re.search(r'^[1-4]\.\s*₹?\d', tl, re.MULTILINE):
+        return True
+
+    return False
+
+
+ROUGH_SYS = """Solve this exam question like a TOPPER writing on rough paper.
+
+STRICT RULES:
+- Max 10 lines total
+- ONLY numbers, variables, symbols
+- NO words like "Let", "Therefore", "Hence", "Profit", "Solution", "Answer"
+- NO LaTeX, NO $$, NO explanations
+- Each calculation = new line
+- Short 2-word heading first
+- End with: — Technical Serena
+
+STYLE:
 Quick Solve
-1.15x + 0.75x = 2014
-1.90x = 2014
-x = 1060
-
-Another:
-SP = 120% of 800 = 960
-Discount = 10%
-Final = 960 × 0.9 = 864
-Profit = 864 - 800 = 64
-
+CP1 = 1.6CP2
+SP1 = 1.25CP1
+0.25CP1 - 0.1CP2 = 225
+0.3CP2 = 225
+CP2 = 750
+CP1 = 1200
 — Technical Serena"""
 
-THEORY_SYS = """You are {exam} expert. Student: {name}.
 
-STRICT FORMAT:
-✅ [Answer — 1 line]
-📌 [Why — 2 lines max]
+THEORY_SYS = """You are {exam} expert teacher. Student: {name}.
+
+Answer in this EXACT format (strict):
+✅ [Direct answer — 1 line]
+📌 [Core concept — 2 lines max]
 🧠 [Memory trick — 1 line]
-📋 [2025-26 exam angle — 1 line]
-— Technical Serena
+📋 [2025-26 exam tip — 1 line]
 
-Total: under 8 lines. No paragraphs."""
+Total under 6 lines. Simple. No paragraphs. No bullet lists."""
 
-async def solve_doubt(question, exam, name, lang="en"):
+
+async def solve_doubt(question: str, exam: str, name: str, lang: str = "en") -> str:
     is_math = _is_math(question)
+
     if is_math:
         system = ROUGH_SYS
-        prompt = f"Solve (max 10 lines rough copy style):\n{question}"
-    else:
-        system = THEORY_SYS.format(name=name, exam=EXAM_CTX.get(exam,"competitive exam"))
-        prompt = question
-    try:
-        r = await ask_ai(prompt, system)
-        if is_math:
+        prompt = f"Solve (rough copy, max 10 lines):\n{question}"
+        try:
+            r = await ask_ai(prompt, system)
             return f"```\n{r.strip()}\n```"
-        return f"🎓 **{name}:**\n\n{r.strip()}"
-    except Exception as e:
-        return f"❌ Retry karo. ({str(e)[:50]})"
+        except Exception as e:
+            return f"❌ Retry karo. ({str(e)[:50]})"
+    else:
+        system = THEORY_SYS.format(
+            name=name,
+            exam=EXAM_CTX.get(exam, "competitive exam 2025-26")
+        )
+        try:
+            r = await ask_ai(question, system)
+            return f"🎓 **{name}:**\n\n{r.strip()}"
+        except Exception as e:
+            return f"❌ Retry karo. ({str(e)[:50]})"

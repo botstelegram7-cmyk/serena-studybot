@@ -24,28 +24,53 @@ PRESETS = {
 }
 
 
-# ── SINGLE COLLECTION SESSION (no split, no mismatch) ─────────
-SESSION_COL = db["sessions_v2"]
+# ── SESSION HELPERS (fresh db ref every call = no stale conn) ──
+def _col():
+    """Always get fresh collection — prevents MongoDB timeout issues"""
+    return db["sessions_v2"]
 
 
 async def _save_session(uid: int, data: dict):
-    """Save everything in ONE document"""
-    await SESSION_COL.delete_many({"uid": uid})
+    col = _col()
+    # Ensure index exists for fast lookups
+    try:
+        await col.create_index("uid", unique=False)
+    except Exception:
+        pass
+    await col.delete_many({"uid": uid})
     data["uid"]        = uid
     data["created_at"] = time.time()
-    await SESSION_COL.insert_one(data)
+    data["expire_at"]  = time.time() + 7200  # 2hr auto-expire hint
+    await col.insert_one(data)
+    print(f"[Session] Saved for uid={uid}, total_q={data.get('total',0)}", flush=True)
 
 
-async def _get_session(uid: int) -> dict | None:
-    return await SESSION_COL.find_one({"uid": uid})
+async def _get_session(uid: int):
+    """Fetch with retry on connection error"""
+    for attempt in range(3):
+        try:
+            return await _col().find_one({"uid": uid})
+        except Exception as e:
+            print(f"[Session] get attempt {attempt+1} failed: {e}")
+            await asyncio.sleep(0.5)
+    return None
 
 
 async def _update_session(uid: int, updates: dict):
-    await SESSION_COL.update_one({"uid": uid}, {"$set": updates})
+    for attempt in range(3):
+        try:
+            await _col().update_one({"uid": uid}, {"$set": updates})
+            return
+        except Exception as e:
+            print(f"[Session] update attempt {attempt+1} failed: {e}")
+            await asyncio.sleep(0.5)
 
 
 async def _clear_session(uid: int):
-    await SESSION_COL.delete_many({"uid": uid})
+    try:
+        await _col().delete_many({"uid": uid})
+    except Exception as e:
+        print(f"[Session] clear failed: {e}")
 
 
 # ── PROGRESS BARS ─────────────────────────────────────────────
@@ -224,9 +249,11 @@ async def _send_q(client, chat_id, uid):
 async def process_button_answer(client, uid, chat_id, q_idx, user_ans):
     sess = await _get_session(uid)
     if not sess:
+        print(f"[Session] NOT FOUND for uid={uid}, q_idx={q_idx}", flush=True)
         await client.send_message(chat_id,
-            "❌ Session expired. Start again: /test SSC")
+            "⚠️ Session timeout hua.\n/stoptest karo phir /test SSC se dobara shuru karo!")
         return
+    print(f"[Session] Found for uid={uid}, current={sess.get('current',0)}", flush=True)
 
     qs  = sess.get("questions", [])
     if q_idx >= len(qs):
