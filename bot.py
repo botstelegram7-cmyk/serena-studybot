@@ -700,22 +700,28 @@ async def cmd_broadcast(_, msg: Message):
 
 
 
-# ── NATIVE POLL ANSWER HANDLER ────────────────────────────────
-@app.on_message(filters.poll)
-async def on_poll_update(_, msg: Message):
-    """Catch poll votes via message updates"""
-    pass  # Handled by on_poll_answer below if available
+# ── POLL ANSWER VIA RAW UPDATES ──────────────────────────────
+# Pyrogram 2.0.106 doesn't support on_poll_answer decorator
+# Instead we use on_raw_update to catch MessagePollVote
+from pyrogram import raw as _raw
 
-# Try to register poll answer handler (Pyrogram version dependent)
-try:
-    from pyrogram.types import PollAnswer as _PA
-    @app.on_poll_answer()
-    async def on_poll_answer_handler(_, pa):
-        uid = pa.user.id
-        await process_poll_answer(app, uid, pa.poll_id, pa.option_ids)
-    print("[bot.py] Poll answer handler registered ✅", flush=True)
-except Exception as _pe:
-    print(f"[bot.py] Poll handler not available: {_pe}", flush=True)
+@app.on_raw_update()
+async def raw_update_handler(client, update, users, chats):
+    """Catch poll answers via raw Telegram updates"""
+    try:
+        # MessagePollVote is sent when user votes in quiz poll
+        if isinstance(update, _raw.types.UpdateMessagePollVote):
+            uid       = update.user_id
+            poll_id   = update.poll_id
+            option_ids = [opt for opt in update.options] if update.options else []
+            # Convert bytes options to indices
+            chosen = []
+            for i, opt in enumerate(option_ids):
+                chosen.append(i)
+            await process_poll_answer(app, uid, poll_id, chosen)
+    except Exception as e:
+        if "UpdateMessagePollVote" in str(type(update)):
+            print(f"[Poll] raw handler error: {e}", flush=True)
 
 # ═══════════════ SMART TEXT ═══════════════════════════════════
 DOUBT_KW = [
