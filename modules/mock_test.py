@@ -384,7 +384,7 @@ async def _send_buttons(client, chat_id, uid, q, idx, total, sess):
 
 # ── PROCESS POLL ANSWER ───────────────────────────────────────
 async def process_poll_answer(client, uid: int, poll_id: int, chosen_ids: list):
-    """Handle native quiz poll answers"""
+    """Handle native quiz poll answers — immediately move to next"""
     sess = await _get_session(uid)
     if not sess:
         return
@@ -394,7 +394,12 @@ async def process_poll_answer(client, uid: int, poll_id: int, chosen_ids: list):
     if q_idx is None:
         return
 
-    qs  = sess.get("questions", [])
+    # Prevent double processing
+    answers = sess.get("answers", {})
+    if str(q_idx) in answers:
+        return  # Already answered
+
+    qs = sess.get("questions", [])
     if q_idx >= len(qs):
         return
 
@@ -402,29 +407,40 @@ async def process_poll_answer(client, uid: int, poll_id: int, chosen_ids: list):
     correct_ans = str(q.get("answer","A")).strip().upper()[:1]
     correct_idx = ord(correct_ans) - ord('A')
 
-    # Map chosen option index to letter
     if chosen_ids:
         chosen_letter = chr(65 + chosen_ids[0])
-        is_correct = chosen_ids[0] == correct_idx
+        is_correct    = chosen_ids[0] == correct_idx
     else:
         chosen_letter = "SKIPPED"
-        is_correct = False
+        is_correct    = False
 
-    answers = sess.get("answers", {})
     answers[str(q_idx)] = chosen_letter
     nxt = q_idx + 1
 
     await update_subject_stat(uid, q.get("subject","General"), is_correct)
     await _update_session(uid, {"answers": answers, "current": nxt})
 
+    # ── Immediate next question (don't wait for timer) ─────
+    await asyncio.sleep(1.5)   # Small delay to let Telegram show result
+    sess = await _get_session(uid)
+    if not sess:
+        return  # Test was stopped
+    if nxt >= sess.get("total", 0):
+        await _finish(client, uid, uid)
+    else:
+        await _send_q(client, uid, uid)
+
 
 # ── PROCESS BUTTON ANSWER ─────────────────────────────────────
 async def process_button_answer(client, uid, chat_id, q_idx, user_ans):
     sess = await _get_session(uid)
     if not sess:
-        print(f"[Session] ❌ NOT FOUND uid={uid} q={q_idx}", flush=True)
-        await client.send_message(chat_id,
-            "⚠️ /stoptest karo, phir /test SSC se shuru karo.")
+        # Test was stopped by user — silently ignore
+        return
+
+    # Check if already answered (double tap prevention)
+    existing_ans = sess.get("answers", {})
+    if str(q_idx) in existing_ans:
         return
 
     qs  = sess.get("questions", [])
@@ -472,11 +488,14 @@ async def process_button_answer(client, uid, chat_id, q_idx, user_ans):
     await client.send_message(chat_id, fb)
 
     if nxt >= total:
-        await asyncio.sleep(2)
+        await asyncio.sleep(1.5)
         await _finish(client, chat_id, uid)
     else:
-        await asyncio.sleep(1.5)
-        await _send_q(client, chat_id, uid)
+        await asyncio.sleep(1.5)  # Anti-flood delay
+        # Re-check session still exists (user may have stopped test)
+        check = await _get_session(uid)
+        if check:
+            await _send_q(client, chat_id, uid)
 
 
 # ── FINISH + ANALYSIS ─────────────────────────────────────────

@@ -1,3 +1,4 @@
+import asyncio
 import random
 from modules.ai_helper import ask_ai_json
 
@@ -188,6 +189,7 @@ Return ONLY JSON array (no other text):
                     return v[:batch]
     except Exception as e:
         print(f"[QGen] Failed: {e}")
+        await asyncio.sleep(2)  # Wait before retry on failure
     return []
 
 
