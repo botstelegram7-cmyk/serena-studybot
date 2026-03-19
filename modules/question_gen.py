@@ -141,7 +141,7 @@ async def generate_pyq_batch(exam: str, subject: str, section: str = None,
         "RAILWAY": "RRB 2025-26 style — straightforward but tricky options",
     }.get(exam, "competitive exam 2025-26 style")
 
-    batch = min(count, 5)
+    batch = min(count, 3)  # Max 3 per call to reduce token usage + avoid 429
 
     prompt = f"""You are an expert Indian competitive exam question maker with complete knowledge up to March 2026.
 

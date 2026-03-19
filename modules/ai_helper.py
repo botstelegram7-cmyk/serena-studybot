@@ -1,27 +1,24 @@
 import httpx, json, asyncio, time, re
 from config import GROQ_API_KEY, GEMINI_API_KEY, SAMBANOVA_API_KEY
 
-# ── UPDATED MODELS ────────────────────────────────────────────
-GROQ_MODEL      = "llama-3.3-70b-versatile"
-GEMINI_MODEL    = "gemini-2.0-flash"          # Fixed: 1.5-flash is 404
-SAMBANOVA_MODEL = "Meta-Llama-3.3-70B-Instruct"  # Fixed: 405B is 410 GONE
+GROQ_MODEL   = "llama-3.3-70b-versatile"
+GEMINI_MODEL = "gemini-2.0-flash"
+SNOVA_MODEL  = "Meta-Llama-3.3-70B-Instruct"
 
-# ── RATE LIMITING ─────────────────────────────────────────────
-_last_call: dict = {}   # provider → timestamp
-_MIN_GAP = 1.5          # minimum seconds between calls per provider
+# ── GLOBAL RATE LIMITER ───────────────────────────────────────
+_cooldown: dict = {}   # provider → unix time when it's free again
 
-async def _rate_limit(provider: str):
-    """Ensure minimum gap between calls to same provider"""
-    last = _last_call.get(provider, 0)
-    gap  = time.time() - last
-    if gap < _MIN_GAP:
-        await asyncio.sleep(_MIN_GAP - gap)
-    _last_call[provider] = time.time()
+def _is_cooling(provider: str) -> bool:
+    return time.time() < _cooldown.get(provider, 0)
+
+def _set_cooldown(provider: str, seconds: float):
+    _cooldown[provider] = time.time() + seconds
+    print(f"[AI] {provider} cooldown {seconds:.0f}s", flush=True)
 
 
 async def _groq(prompt: str, system: str) -> str:
     if not GROQ_API_KEY: raise ValueError("No Groq key")
-    await _rate_limit("groq")
+    if _is_cooling("groq"): raise Exception("Groq cooling down")
     msgs = []
     if system: msgs.append({"role": "system", "content": system})
     msgs.append({"role": "user", "content": prompt})
@@ -31,29 +28,34 @@ async def _groq(prompt: str, system: str) -> str:
             headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
             json={"model": GROQ_MODEL, "messages": msgs, "max_tokens": 2000}
         )
+        if r.status_code == 429:
+            retry_after = float(r.headers.get("retry-after", 30))
+            _set_cooldown("groq", retry_after)
+            raise Exception(f"Groq 429 — cooling {retry_after}s")
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"].strip()
 
 
 async def _gemini(prompt: str, system: str) -> str:
     if not GEMINI_API_KEY: raise ValueError("No Gemini key")
-    await _rate_limit("gemini")
+    if _is_cooling("gemini"): raise Exception("Gemini cooling down")
     full = f"{system}\n\n{prompt}" if system else prompt
     async with httpx.AsyncClient(timeout=45) as c:
         r = await c.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}",
-            json={
-                "contents": [{"parts": [{"text": full}]}],
-                "generationConfig": {"maxOutputTokens": 2000}
-            }
+            json={"contents": [{"parts": [{"text": full}]}],
+                  "generationConfig": {"maxOutputTokens": 2000}}
         )
+        if r.status_code == 429:
+            _set_cooldown("gemini", 60)
+            raise Exception("Gemini 429 — cooling 60s")
         r.raise_for_status()
         return r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
 async def _sambanova(prompt: str, system: str) -> str:
     if not SAMBANOVA_API_KEY: raise ValueError("No SambaNova key")
-    await _rate_limit("sambanova")
+    if _is_cooling("sambanova"): raise Exception("SambaNova cooling down")
     msgs = []
     if system: msgs.append({"role": "system", "content": system})
     msgs.append({"role": "user", "content": prompt})
@@ -61,14 +63,17 @@ async def _sambanova(prompt: str, system: str) -> str:
         r = await c.post(
             "https://api.sambanova.ai/v1/chat/completions",
             headers={"Authorization": f"Bearer {SAMBANOVA_API_KEY}"},
-            json={"model": SAMBANOVA_MODEL, "messages": msgs, "max_tokens": 2000}
+            json={"model": SNOVA_MODEL, "messages": msgs, "max_tokens": 2000}
         )
+        if r.status_code in (429, 410):
+            _set_cooldown("sambanova", 60)
+            raise Exception(f"SambaNova {r.status_code}")
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"].strip()
 
 
 async def ask_ai(prompt: str, system: str = "") -> str:
-    """Groq → Gemini → SambaNova with rate limiting"""
+    """Try providers in order, skip ones that are cooling down"""
     providers = [
         ("Groq",      _groq,      GROQ_API_KEY),
         ("Gemini",    _gemini,    GEMINI_API_KEY),
@@ -79,18 +84,16 @@ async def ask_ai(prompt: str, system: str = "") -> str:
         if not key:
             continue
         try:
-            return await fn(prompt, system)
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code
-            print(f"[AI] {name} HTTP {status}: {e}", flush=True)
-            if status == 429:
-                # Rate limited — wait before trying next
-                await asyncio.sleep(3)
-            last_err = e
+            result = await fn(prompt, system)
+            # Success — clear any cooldown
+            _cooldown.pop(name.lower(), None)
+            return result
         except Exception as e:
-            print(f"[AI] {name} failed: {e}", flush=True)
+            print(f"[AI] {name}: {str(e)[:80]}", flush=True)
             last_err = e
-    raise Exception(f"All AI providers failed. Last: {last_err}")
+            continue
+
+    raise Exception(f"All AI providers unavailable. Last: {last_err}")
 
 
 def _extract_json(text: str):
@@ -102,23 +105,21 @@ def _extract_json(text: str):
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # Try extracting array
-    for start_char, end_char in [("[", "]"), ("{", "}")]:
-        start = text.find(start_char)
-        if start != -1:
-            chunk = text[start:]
-            # Try progressively shorter
-            for end_pos in [chunk.rfind("},"), chunk.rfind("}")]:
-                if end_pos > 0:
-                    candidate = chunk[:end_pos+1] + ("]" if start_char=="[" else "")
-                    try:
-                        return json.loads(candidate)
-                    except Exception:
-                        pass
+    for sc, ec in [("[", "]"), ("{", "}")]:
+        si = text.find(sc)
+        if si == -1:
+            continue
+        chunk = text[si:]
+        for ep in [chunk.rfind("},"), chunk.rfind("}")]:
+            if ep > 0:
+                try:
+                    return json.loads(chunk[:ep+1] + ("]" if sc=="[" else ""))
+                except Exception:
+                    pass
     raise json.JSONDecodeError("Cannot extract JSON", text, 0)
 
 
 async def ask_ai_json(prompt: str, system: str = "") -> dict | list:
-    sys_p = (system + "\n\nRespond ONLY with valid JSON. No markdown, no backticks.").strip()
-    raw   = await ask_ai(prompt, sys_p)
+    sp  = (system + "\n\nRespond ONLY with valid JSON. No markdown, no backticks.").strip()
+    raw = await ask_ai(prompt, sp)
     return _extract_json(raw)

@@ -86,15 +86,20 @@ def _mbar(p, w=8):  return "▓"*int(p/100*w) + "░"*(w-int(p/100*w))
 async def _fetch(exam, subject, count, difficulty):
     qs = list(await get_pyq_questions(exam, subject, count))
     attempts = 0
-    while len(qs) < count and attempts < 4:
+    while len(qs) < count and attempts < 3:
         needed = count - len(qs)
-        batch  = min(needed, 5)
-        ai = await generate_pyq_batch(exam, subject, count=batch, difficulty=difficulty)
-        if ai:
-            qs.extend(ai)
-        else:
+        batch  = min(needed, 3)  # small batches
+        try:
+            ai = await generate_pyq_batch(exam, subject, count=batch, difficulty=difficulty)
+            if ai:
+                qs.extend(ai)
+            else:
+                attempts += 1
+        except Exception as e:
+            print(f"[Fetch] AI failed attempt {attempts}: {e}", flush=True)
             attempts += 1
-        await asyncio.sleep(0.2)
+        # Delay between AI calls to avoid 429
+        await asyncio.sleep(3)
     return qs[:count]
 
 
