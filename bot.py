@@ -441,10 +441,14 @@ async def cmd_extreme(_, msg: Message):
 async def cmd_stoptest(_, msg: Message):
     uid  = msg.from_user.id
     name = msg.from_user.first_name
+    # Force clear from BOTH memory and MongoDB
     await _force_clear(uid)
+    # Extra: clear from mock_test internal dict too
+    from modules.mock_test import _SESSIONS
+    _SESSIONS.pop(uid, None)
     await msg.reply(
-        f"🛑 **{name}, all sessions cleared!**\n\n"
-        f"✅ Start fresh: /test SSC"
+        f"🛑 **{name}, test stopped!**\n"
+        f"✅ `/test SSC` se naya shuru karo"
     )
 
 
@@ -697,10 +701,21 @@ async def cmd_broadcast(_, msg: Message):
 
 
 # ── NATIVE POLL ANSWER HANDLER ────────────────────────────────
-# Pyrogram 2.0.106 doesn't have on_poll_answer decorator
-# But we can catch PollAnswer via raw updates — using workaround
-# Poll answers are tracked by timer in mock_test.py automatically
-# This handler is for future Pyrogram versions that support it
+@app.on_message(filters.poll)
+async def on_poll_update(_, msg: Message):
+    """Catch poll votes via message updates"""
+    pass  # Handled by on_poll_answer below if available
+
+# Try to register poll answer handler (Pyrogram version dependent)
+try:
+    from pyrogram.types import PollAnswer as _PA
+    @app.on_poll_answer()
+    async def on_poll_answer_handler(_, pa):
+        uid = pa.user.id
+        await process_poll_answer(app, uid, pa.poll_id, pa.option_ids)
+    print("[bot.py] Poll answer handler registered ✅", flush=True)
+except Exception as _pe:
+    print(f"[bot.py] Poll handler not available: {_pe}", flush=True)
 
 # ═══════════════ SMART TEXT ═══════════════════════════════════
 DOUBT_KW = [
