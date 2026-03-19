@@ -19,7 +19,7 @@ app = Client(
 from database import (
     get_or_create_user, add_questions_bulk, count_questions,
     update_user, get_user, get_user_lang, get_db_stats,
-    check_doubt_limit, get_all_users
+    check_doubt_limit, get_all_users, get_image, set_image, get_all_images
 )
 from modules.mock_test    import start_mock_test, process_button_answer, clear_session, get_session
 from modules.doubt_solver import solve_doubt
@@ -141,31 +141,38 @@ async def _force_clear(uid: int):
 async def cmd_start(_, msg: Message):
     u    = await _user(msg)
     name = msg.from_user.first_name
-    lang = u.get("lang", "en")
 
-    text = (
+    caption = (
         f"╔══════════════════════════╗\n"
         f"║  🎓 **SERENA STUDY BOT**     ║\n"
         f"║  _Your Exam Companion_    ║\n"
         f"╚══════════════════════════╝\n\n"
-        f"👋 **Welcome back, {name}!**\n\n"
-        f"📅 **2025-26 Updated** | Latest PYQ Pattern\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📋 **SSC** — CGL · CHSL · MTS · GD · CPO\n"
-        f"🏛 **UPSC** — CSE · CAPF · NDA · CDS\n"
+        f"👋 **Welcome, {name}!**\n"
+        f"📅 _2025-26 Updated | Latest PYQ_\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📋 **SSC** — CGL · CHSL · MTS · GD\n"
+        f"🏛 **UPSC** — CSE · NDA · CDS · CAPF\n"
         f"⚗️ **JEE** — Mains · Advanced\n"
         f"🚂 **RAILWAY** — NTPC · Group D · ALP\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"✨ **Features:**\n"
-        f"📅 PYQ Questions with Exam Tag & Year\n"
+        f"📅 Real PYQ with Exam Tag + Year\n"
         f"💀 Extreme Difficulty Mode\n"
-        f"🗂 Topic-wise Practice\n"
-        f"🤖 AI Doubt Solver (Rough Copy Style)\n"
-        f"📊 Testbook-style Analysis\n"
-        f"🌐 English · हिंदी · বাংলা\n\n"
-        f"👇 **Choose your exam to begin:**"
+        f"🗂 Topic-wise Targeted Practice\n"
+        f"✏️ AI Doubt → Rough Copy Style\n"
+        f"📊 Testbook-style Analysis\n\n"
+        f"👇 **Choose your exam:**"
     )
-    await msg.reply(text, reply_markup=start_kb())
+
+    # Try to send with image
+    img_url = await get_image("START")
+    try:
+        if img_url:
+            await msg.reply_photo(img_url, caption=caption, reply_markup=start_kb())
+        else:
+            await msg.reply(caption, reply_markup=start_kb())
+    except Exception:
+        await msg.reply(caption, reply_markup=start_kb())
 
 
 @app.on_message(filters.command("help"))
@@ -592,6 +599,84 @@ async def cmd_dbstats(_, msg: Message):
     text += f"\n**TOTAL: {total}**"
     await msg.reply(text)
 
+
+@app.on_message(filters.command("setimage") & owner_filter)
+async def cmd_setimage(_, msg: Message):
+    """
+    Set image for start/exam screens.
+    Usage: /setimage START <url>
+    Or reply to a photo: /setimage SSC
+    Keys: START, SSC, UPSC, JEE, RAILWAY
+    """
+    args = msg.command[1:]
+    valid_keys = ["START","SSC","UPSC","JEE","RAILWAY"]
+
+    # Reply to photo mode
+    if msg.reply_to_message and msg.reply_to_message.photo:
+        if not args:
+            await msg.reply(
+                "Usage: Reply to image + /setimage KEY\n"
+                f"Keys: {', '.join(valid_keys)}"
+            )
+            return
+        key = args[0].upper()
+        if key not in valid_keys:
+            await msg.reply(f"❌ Invalid key. Use: {', '.join(valid_keys)}")
+            return
+        # Download and get file_id
+        photo = msg.reply_to_message.photo
+        await set_image(key, photo.file_id)
+        await msg.reply(f"✅ **{key}** image set via file_id!")
+        return
+
+    # URL mode
+    if len(args) < 2:
+        keys_str = ', '.join(valid_keys)
+        await msg.reply(
+            f"📸 **Set Bot Images**\n\n"
+            f"**Method 1 — URL:**\n"
+            f"`/setimage START https://i.imgur.com/xyz.jpg`\n"
+            f"`/setimage SSC https://i.imgur.com/abc.jpg`\n\n"
+            f"**Method 2 — Photo Reply:**\n"
+            f"Reply to any photo with `/setimage SSC`\n\n"
+            f"**Keys:** {keys_str}\n\n"
+            f"**View current:** /images"
+        )
+        return
+
+    key = args[0].upper()
+    url = args[1]
+    if key not in valid_keys:
+        await msg.reply(f"❌ Invalid key. Use: {', '.join(valid_keys)}")
+        return
+    await set_image(key, url)
+    await msg.reply(f"✅ **{key}** image set!\n\n`{url[:60]}`")
+
+
+@app.on_message(filters.command("images") & owner_filter)
+async def cmd_images(_, msg: Message):
+    imgs = await get_all_images()
+    if not imgs:
+        await msg.reply("No images set yet.\nUse: /setimage START url")
+        return
+    out = ["**Bot Images:**"]
+    for key, url in imgs.items():
+        short = str(url)[:50]
+        out.append(f"**{key}:** `{short}`")
+    out.append("\nUpdate: /setimage KEY url")
+    await msg.reply("\n".join(out))
+
+@app.on_message(filters.command("delimage") & owner_filter)
+async def cmd_delimage(_, msg: Message):
+    args = msg.command[1:]
+    if not args:
+        await msg.reply("Usage: `/delimage SSC`")
+        return
+    from database import images_col
+    key = args[0].upper()
+    await images_col.delete_one({"key": key})
+    await msg.reply(f"✅ **{key}** image removed!")
+
 @app.on_message(filters.command("broadcast") & owner_filter)
 async def cmd_broadcast(_, msg: Message):
     text = " ".join(msg.command[1:]).strip()
@@ -620,7 +705,7 @@ DOUBT_KW = [
 SKIP_CMDS = [
     "start","help","test","quick","practice","topic","extreme","ask",
     "stoptest","myprogress","leaderboard","setexam","language",
-    "upload","dbstats","broadcast"
+    "upload","dbstats","broadcast","setimage","images","delimage"
 ]
 
 @app.on_message(filters.text & filters.private & ~filters.command(SKIP_CMDS))

@@ -186,3 +186,24 @@ async def check_doubt_limit(uid: int, max_per_day: int) -> tuple:
         return False, 0
     await doubts_rl_col.update_one({"uid": uid, "date": today}, {"$inc": {"count": 1}})
     return True, max_per_day - doc["count"] - 1
+
+
+# ══════════════════════════════ BOT IMAGES ═══════════════════
+images_col = db["bot_images"]
+
+async def get_image(key: str) -> str | None:
+    """Get image URL by key: start, SSC, UPSC, JEE, RAILWAY"""
+    doc = await images_col.find_one({"key": key.upper()})
+    return doc.get("url") if doc else None
+
+async def set_image(key: str, url: str):
+    """Set image URL for a key"""
+    await images_col.update_one(
+        {"key": key.upper()},
+        {"$set": {"key": key.upper(), "url": url}},
+        upsert=True
+    )
+
+async def get_all_images() -> dict:
+    docs = await images_col.find({}).to_list(20)
+    return {d["key"]: d["url"] for d in docs}
