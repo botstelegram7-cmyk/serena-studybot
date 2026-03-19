@@ -122,6 +122,7 @@ async def start_mock_test(client: Client, message: Message,
         "exam":          exam,
         "subject":       subject,
         "total":         total,
+        "current_idx":   0,          # ← MUST initialize here
         "answers":       {},
         "start_time":    time.time(),
         "marks_correct": marks["correct"],

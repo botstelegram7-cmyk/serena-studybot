@@ -2,134 +2,96 @@ from modules.ai_helper import ask_ai
 import re
 
 EXAM_CTX = {
-    "SSC":     "SSC CGL/CHSL/MTS/CPO competitive exam",
-    "UPSC":    "UPSC Civil Services (IAS/IPS/IFS) exam",
-    "JEE":     "JEE Mains & Advanced engineering entrance",
-    "RAILWAY": "Railway RRB NTPC/Group D/ALP exam",
+    "SSC":     "SSC CGL/CHSL/MTS/CPO 2025-26",
+    "UPSC":    "UPSC CSE 2025-26",
+    "JEE":     "JEE Mains/Advanced 2025-26",
+    "RAILWAY": "RRB NTPC/Group D 2025-26",
 }
 
-MATH_KW = ["percent","%","profit","loss","si","ci","interest","speed","distance",
-           "time","ratio","proportion","average","mixture","number","lcm","hcf",
-           "train","work","pipe","age","solve","calculate","find","value","equation",
-           "algebra","triangle","area","volume","probability","प्रतिशत","लाभ","हानि",
-           "গতি","সময়","অনুপাত"]
-
+MATH_KW = [
+    "percent","%","profit","loss","si","ci","interest","speed","distance",
+    "time","ratio","proportion","average","mixture","number","lcm","hcf",
+    "train","work","pipe","age","solve","calculate","find","value","equation",
+    "algebra","triangle","area","volume","probability","discount","cost","price",
+    "प्रतिशत","लाभ","हानि","गति","औसत","अनुपात","প্রতিশত","গতি",
+    "=","×","÷","+","-","²","√","x","y"
+]
 
 def _is_math(text: str) -> bool:
     tl = text.lower()
-    return any(kw in tl for kw in MATH_KW) or bool(re.search(r'\d+',text))
+    return any(kw in tl for kw in MATH_KW) or bool(re.search(r'\d+', text))
 
 
-SYSTEM_MATH = {
-    "en": """You are an expert {exam} teacher solving student doubts.
-Student name: {name}
+ROUGH_COPY_SYSTEM = """You are solving a competitive exam Quant/Maths question like a TOPPER writes on a ROUGH COPY during SSC/JEE/Railway exam.
 
-For MATHS/QUANT/REASONING questions:
-1. SHORT METHOD first (exam speed tricks, max 3 lines) — MOST IMPORTANT
-2. Step-by-step solution with calculations shown clearly
-3. Concept/formula used
-4. One similar practice example
+STRICT RULES — NO EXCEPTIONS:
+1. Start with ONE random short heading (e.g. "SSC Quant", "Quick Solve", "Speed Test")
+2. Write ONLY numbers, symbols, steps — NO explanation words
+3. NO LaTeX, NO $$, NO \\frac, NO aligned — BANNED
+4. NO words like "Let", "Therefore", "Hence", "Profit", "Loss", "Solution"
+5. Each calculation on NEW LINE
+6. Use = sign naturally like pen on paper
+7. Show intermediate steps like rough work
+8. End with: — Technical Serena
 
-Format exactly:
-⚡ **SHORT METHOD:** [fastest trick]
-📐 **STEP-BY-STEP:** [detailed solution]
-💡 **CONCEPT:** [formula/rule]
-🔁 **PRACTICE:** [similar example question]""",
+EXACT STYLE TO FOLLOW:
+SSC Quant Booster
+0.75 × 2540
+= 1905
++ 109
+= 2014
+1.15x + 0.75x = 2014
+1.90x = 2014
+x = 2014 ÷ 1.90
+x = 1060 ✓
 
-    "hi": """आप {exam} परीक्षा के विशेषज्ञ शिक्षक हैं।
-छात्र का नाम: {name}
+ANOTHER EXAMPLE:
+Speed Solve
+CP = 100
+SP = 120 → 20% profit
+New SP = 120 × 0.9 = 108
+Profit = 108 - 100 = 8%
 
-गणित/रीजनिंग प्रश्नों के लिए:
-1. पहले शॉर्ट मेथड (परीक्षा की स्पीड ट्रिक, 3 लाइन में)
-2. स्टेप बाय स्टेप हल
-3. फॉर्मूला/नियम
-4. एक अभ्यास प्रश्न
+— Technical Serena
 
-Format:
-⚡ **शॉर्ट मेथड:** [सबसे तेज तरीका]
-📐 **हल:** [विस्तृत हल]
-💡 **सूत्र:** [फॉर्मूला/नियम]
-🔁 **अभ्यास:** [इसी तरह का एक प्रश्न]""",
+REMEMBER: Raw. Direct. Rough copy feel. No theory. No formatting."""
 
-    "bn": """আপনি {exam} পরীক্ষার বিশেষজ্ঞ শিক্ষক।
-ছাত্রের নাম: {name}
 
-গণিত/রিজনিং প্রশ্নের জন্য:
-1. শর্ট মেথড প্রথমে (পরীক্ষার স্পিড ট্রিক)
-2. ধাপে ধাপে সমাধান
-3. সূত্র/নিয়ম
-4. একটি অনুশীলন প্রশ্ন
+THEORY_SYSTEM = """You are a {exam} expert teacher. Student name: {name}.
 
-Format:
-⚡ **শর্ট মেথড:** [সবচেয়ে দ্রুত পদ্ধতি]
-📐 **সমাধান:** [বিস্তারিত]
-💡 **সূত্র:** [ফর্মুলা/নিয়ম]
-🔁 **অনুশীলন:** [অনুরূপ প্রশ্ন]""",
-}
+Answer format (strict):
+✅ [Direct answer in 1 line]
 
-SYSTEM_THEORY = {
-    "en": """You are an expert {exam} teacher.
-Student name: {name}
+📌 [Core concept — max 3 lines, simple language]
 
-For theory/GK/science questions:
-1. Direct clear answer first
-2. Explain concept with real-world example
-3. Memory trick/mnemonic if possible
-4. How this appears in {exam} (PYQ mention if possible)
+🌍 [1 real example everyone knows]
 
-Format:
-✅ **ANSWER:** [direct answer]
-📖 **EXPLANATION:** [clear concept]
-🌍 **EXAMPLE:** [real-world example]
-🧠 **TRICK:** [memory trick if any]
-📋 **EXAM TIP:** [how {exam} asks this]""",
+🧠 [Memory trick if possible — 1 line]
 
-    "hi": """आप {exam} के विशेषज्ञ शिक्षक हैं।
-छात्र का नाम: {name}
+📋 [{exam} 2025-26 Exam Angle: how this is asked now]
 
-सिद्धांत/GK प्रश्नों के लिए:
-1. सीधा उत्तर पहले
-2. असली उदाहरण से समझाएं
-3. याद करने की ट्रिक
-4. {exam} में कैसे पूछा जाता है
+— Technical Serena
 
-Format:
-✅ **उत्तर:** [सीधा जवाब]
-📖 **समझाइए:** [स्पष्ट व्याख्या]
-🌍 **उदाहरण:** [वास्तविक उदाहरण]
-🧠 **याद करें:** [ट्रिक]
-📋 **परीक्षा टिप:** [{exam} में कैसे पूछते हैं]""",
-
-    "bn": """আপনি {exam} বিশেষজ্ঞ শিক্ষক।
-ছাত্রের নাম: {name}
-
-তত্ত্ব/GK প্রশ্নের জন্য:
-1. সরাসরি উত্তর প্রথমে
-2. বাস্তব উদাহরণ দিয়ে বোঝান
-3. মনে রাখার কৌশল
-4. {exam}-এ কিভাবে জিজ্ঞেস করা হয়
-
-Format:
-✅ **উত্তর:** [সরাসরি উত্তর]
-📖 **ব্যাখ্যা:** [স্পষ্ট ব্যাখ্যা]
-🌍 **উদাহরণ:** [বাস্তব উদাহরণ]
-🧠 **কৌশল:** [মনে রাখার উপায়]
-📋 **পরীক্ষার টিপ:** [{exam}-এ কিভাবে আসে]""",
-}
+No long paragraphs. Simple. Direct. Exam-focused."""
 
 
 async def solve_doubt(question: str, exam: str, name: str, lang: str = "en") -> str:
-    exam_ctx = EXAM_CTX.get(exam, "competitive exam")
+    exam_ctx = EXAM_CTX.get(exam, "competitive exam 2025-26")
     is_math  = _is_math(question)
 
-    template = SYSTEM_MATH if is_math else SYSTEM_THEORY
-    system   = template.get(lang, template["en"]).format(name=name, exam=exam_ctx)
+    if is_math:
+        system = ROUGH_COPY_SYSTEM
+        prompt = question
+    else:
+        system = THEORY_SYSTEM.format(name=name, exam=exam_ctx)
+        prompt = question
 
     try:
-        response = await ask_ai(question, system)
-        label = {"en": f"🎓 **{name}, here's your solution:**",
-                 "hi": f"🎓 **{name}, यह रहा आपका हल:**",
-                 "bn": f"🎓 **{name}, এই নিন আপনার সমাধান:**"}.get(lang, f"🎓 **{name}:**")
-        return f"{label}\n\n{response}"
+        response = await ask_ai(prompt, system)
+        if is_math:
+            # Format as code block for monospace (rough copy feel)
+            return f"```\n{response}\n```"
+        else:
+            return f"🎓 **{name}:**\n\n{response}"
     except Exception as e:
-        return f"❌ AI busy hai, thodi der baad try karo. ({str(e)[:60]})"
+        return f"❌ AI busy hai, retry karo. ({str(e)[:60]})"
