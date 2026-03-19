@@ -21,7 +21,7 @@ from database import (
     update_user, get_user, get_user_lang, get_db_stats,
     check_doubt_limit, get_all_users, get_image, set_image, get_all_images
 )
-from modules.mock_test    import start_mock_test, process_button_answer, clear_session, get_session
+from modules.mock_test    import start_mock_test, process_button_answer, process_poll_answer, clear_session, get_session
 from modules.doubt_solver import solve_doubt
 from modules.tracker      import get_progress_report, get_leaderboard_text
 from modules.parser       import process_owner_upload
@@ -693,6 +693,14 @@ async def cmd_broadcast(_, msg: Message):
             pass
     await msg.reply(f"✅ Sent to {sent} users.")
 
+
+
+
+# ── NATIVE POLL ANSWER HANDLER ────────────────────────────────
+# Pyrogram 2.0.106 doesn't have on_poll_answer decorator
+# But we can catch PollAnswer via raw updates — using workaround
+# Poll answers are tracked by timer in mock_test.py automatically
+# This handler is for future Pyrogram versions that support it
 
 # ═══════════════ SMART TEXT ═══════════════════════════════════
 DOUBT_KW = [
