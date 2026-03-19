@@ -266,15 +266,61 @@ async def _send_q(client, chat_id, uid):
         )
         # Store poll_id → q_idx mapping in session
         poll_map = sess.get("poll_map", {})
-        poll_map[poll_msg.id] = idx
+        poll_map[str(poll_msg.id)] = idx  # string key for MongoDB
         await _update_session(uid, {"poll_map": poll_map})
 
         # After poll expires, auto-move to next
         asyncio.create_task(_wait_and_next(client, chat_id, uid, idx, 62))
+        # Live countdown timer in separate message
+        asyncio.create_task(_live_timer(client, chat_id, uid, idx, 60))
 
     except Exception as e:
         print(f"[Poll] Failed, using buttons: {e}", flush=True)
         await _send_buttons(client, chat_id, uid, q, idx, total, sess)
+
+
+
+async def _live_timer(client, chat_id, uid, q_idx, seconds: int):
+    """Live countdown timer shown below the poll"""
+    timer_icons = ["🕐","🕑","🕒","🕓","🕔","🕕","🕖","🕗","🕘","🕙","🕚","🕛"]
+    
+    try:
+        # Send initial timer message
+        t_msg = await client.send_message(
+            chat_id,
+            f"⏱ **{seconds}s**  {timer_icons[0]}"
+        )
+    except Exception:
+        return
+
+    for remaining in range(seconds-1, -1, -1):
+        await asyncio.sleep(1)
+        # Check if question already answered
+        sess = await _get_session(uid)
+        if not sess or sess.get("current", 0) != q_idx:
+            try: await t_msg.delete()
+            except Exception: pass
+            return
+        # Update every 5 seconds to avoid flood
+        if remaining % 5 == 0 or remaining <= 10:
+            icon = timer_icons[remaining % 12]
+            bar_filled = int((remaining / seconds) * 10)
+            bar = "█" * bar_filled + "░" * (10 - bar_filled)
+            color = "🟢" if remaining > 30 else "🟡" if remaining > 10 else "🔴"
+            try:
+                await t_msg.edit(
+                    f"{color} `{bar}` **{remaining}s**  {icon}"
+                )
+            except Exception:
+                pass
+
+    # Timer expired
+    try:
+        await t_msg.edit("⏰ **Time Up!**")
+        await asyncio.sleep(1)
+        await t_msg.delete()
+    except Exception:
+        pass
 
 
 async def _wait_and_next(client, chat_id, uid, q_idx, wait_secs):
@@ -344,7 +390,7 @@ async def process_poll_answer(client, uid: int, poll_id: int, chosen_ids: list):
         return
 
     poll_map = sess.get("poll_map", {})
-    q_idx = poll_map.get(poll_id)
+    q_idx = poll_map.get(str(poll_id)) or poll_map.get(poll_id)
     if q_idx is None:
         return
 
