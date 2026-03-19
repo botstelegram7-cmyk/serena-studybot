@@ -17,11 +17,11 @@ app = Client(
 )
 
 from database import (
-    get_or_create_user, get_test_session, clear_test_session, sessions_col,
-    add_questions_bulk, count_questions, update_user, get_user,
-    get_user_lang, get_db_stats, check_doubt_limit, get_all_users, db
+    get_or_create_user, add_questions_bulk, count_questions,
+    update_user, get_user, get_user_lang, get_db_stats,
+    check_doubt_limit, get_all_users
 )
-from modules.mock_test    import start_mock_test, process_button_answer
+from modules.mock_test    import start_mock_test, process_button_answer, clear_session, get_session
 from modules.doubt_solver import solve_doubt
 from modules.tracker      import get_progress_report, get_leaderboard_text
 from modules.parser       import process_owner_upload
@@ -133,8 +133,7 @@ async def _lang(uid: int) -> str:
 
 async def _force_clear(uid: int):
     """Nuke all session data for user"""
-    await sessions_col.delete_many({"uid": uid})
-    await db["test_questions"].delete_many({"uid": uid})
+    await clear_session(uid)
 
 
 # ═══════════════ START ════════════════════════════════════════
@@ -628,7 +627,7 @@ SKIP_CMDS = [
 async def smart_text(_, msg: Message):
     u    = await _user(msg)
     text = msg.text.strip()
-    if await get_test_session(msg.from_user.id):
+    if await get_session(msg.from_user.id):
         return
     is_doubt = any(kw in text.lower() for kw in DOUBT_KW) or "?" in text
     if is_doubt:
